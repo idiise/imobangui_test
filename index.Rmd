@@ -1,0 +1,114 @@
+---
+title: "Dashboard Test IMO Bangui"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(echarts4r)
+library(leaflet)
+library(readxl)
+library(sf)
+library(expss)
+
+data <- read_xlsx("base.xlsx", sheet = 1)
+shape <- read_sf("Shapefile/moz_admbnda_adm2_2019.shp")
+b <- data |> janitor::tabyl(`Delivery Modality / Modalidade de entrega`)
+b <- b |> mutate(percent = round(100*percent, 2))
+
+
+shape <- shape |> rename(admin2_pcode = ADM2_PCODE)
+
+# pour la carte
+final_data <- data |>  left_join(
+  shape, by = "admin2_pcode"
+)
+
+final_data <- st_as_sf(final_data)
+final_data <- st_transform(final_data, crs = 4326)
+ed <- data.frame(
+  stringsAsFactors = FALSE,
+          Province = c("cabo delgado", "Manica", "Sofala"),
+              Male = c(5847L, 792L, 5642L),
+            Female = c(10547L, 1926L, 6530L)
+      )
+
+
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Cartographie Population assistée
+
+```{r}
+pal <-  colorFactor(palette = c("#c6ffc7", "#ffe718", "#e88400","#e02d00","#5e0803","#FFFFFF"),
+      levels = c("1", "2", "3", "4","5",NA))
+
+bins <- c(0, 100, 350, 700, 1000, 2500,5000,8000,10000, Inf)
+pal <- colorBin("YlOrRd", domain = final_data$`Number of reached beneficiaries*`, bins = bins)
+
+state_popup <- paste0("<strong>District: </strong>", 
+                      final_data$`District / Distrito`, 
+                      "<br><strong>Population assistée </strong>", 
+                      final_data$`Number of reached beneficiaries*`) %>% lapply(htmltools::HTML)
+
+final_data %>% leaflet() %>% 
+        addProviderTiles("CartoDB.Positron") %>%
+        # setView(lat= 13, lng=3, zoom=4) %>%
+        addPolygons(
+          fillColor = ~pal(final_data$`Number of reached beneficiaries*`),
+          fillOpacity = 0.7,
+          color = "white",
+          opacity = 0.7,
+          weight = 2,
+          dashArray = "2",
+          popup = state_popup,
+          highlight = highlightOptions(
+            weight = 3,
+            color = "black",
+            fillOpacity = 1,
+            bringToFront = TRUE),
+          label = state_popup,
+          labelOptions = labelOptions(
+            textsize = "12px",
+            direction = "auto"
+          )
+          
+        ) %>% addLegend(
+          pal = pal, values = ~final_data$`Number of reached beneficiaries*`,
+          opacity = 0.7, title = "Population assistée", position = "topright"
+        )
+
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Type d'intervention
+
+```{r}
+b |> 
+  e_charts(`Delivery Modality / Modalidade de entrega`) |> 
+  e_pie(percent, name = "Pourcentage") |> 
+  e_tooltip()
+```
+
+### Nombre de bénéficiaire par sexe
+
+```{r}
+
+  ed |> e_chart(Province) |> 
+  e_bar(Male) |> 
+  e_bar(Female) |> 
+  e_tooltip()
+ 
+  
+
+  
+```
+
